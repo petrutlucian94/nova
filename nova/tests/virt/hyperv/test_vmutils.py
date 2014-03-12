@@ -116,3 +116,16 @@ class VMUtilsTestCase(test.NoDBTestCase):
         mock_rasd2.HostResource = [self._FAKE_VOLUME_DRIVE_PATH]
 
         return [mock_rasd1, mock_rasd2]
+
+    def test_list_instance_notes(self):
+        vs = mock.MagicMock()
+        attrs = {'ElementName': 'fake_name',
+                 'Notes': '4f54fb69-d3a2-45b7-bb9b-b6e6b3d893b3'}
+        vs.configure_mock(**attrs)
+        self._vmutils._conn.Msvm_VirtualSystemSettingData.return_value = [vs]
+        response = self._vmutils.list_instance_notes()
+
+        self.assertEqual(response, [(attrs['ElementName'], [attrs['Notes']])])
+        self._vmutils._conn.Msvm_VirtualSystemSettingData.assert_called_with(
+            ['ElementName', 'Notes'],
+            SettingType=self._vmutils._VIRTUAL_SYSTEM_CURRENT_SETTINGS)

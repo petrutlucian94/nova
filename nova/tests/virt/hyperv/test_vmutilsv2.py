@@ -267,3 +267,16 @@ class VMUtilsV2TestCase(test.NoDBTestCase):
                 MetricCollectionEnabled=self._vmutils._METRIC_ENABLED))
 
         mock_svc.ControlMetrics.assert_has_calls(calls, any_order=True)
+
+    def test_list_instance_notes(self):
+        vs = mock.MagicMock()
+        attrs = {'ElementName': 'fake_name',
+                 'Notes': ['4f54fb69-d3a2-45b7-bb9b-b6e6b3d893b3']}
+        vs.configure_mock(**attrs)
+        self._vmutils._conn.Msvm_VirtualSystemSettingData.return_value = [vs]
+        response = self._vmutils.list_instance_notes()
+
+        self.assertEqual(response, [(attrs['ElementName'], attrs['Notes'])])
+        self._vmutils._conn.Msvm_VirtualSystemSettingData.assert_called_with(
+            ['ElementName', 'Notes'],
+            VirtualSystemType=self._vmutils._VIRTUAL_SYSTEM_TYPE_REALIZED)

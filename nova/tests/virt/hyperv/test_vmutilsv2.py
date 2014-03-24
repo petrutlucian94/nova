@@ -280,3 +280,15 @@ class VMUtilsV2TestCase(test.NoDBTestCase):
         self._vmutils._conn.Msvm_VirtualSystemSettingData.assert_called_with(
             ['ElementName', 'Notes'],
             VirtualSystemType=self._vmutils._VIRTUAL_SYSTEM_TYPE_REALIZED)
+
+    def test_list_instances(self):
+        vs = mock.MagicMock()
+        attrs = {'ElementName': 'fake_name'}
+        vs.configure_mock(**attrs)
+        self._vmutils._conn.Msvm_VirtualSystemSettingData.return_value = [vs]
+        response = self._vmutils.list_instances()
+
+        self.assertEqual(response, [(attrs['ElementName'])])
+        self._vmutils._conn.Msvm_VirtualSystemSettingData.assert_called_with(
+            ['ElementName'],
+            VirtualSystemType=self._vmutils._VIRTUAL_SYSTEM_TYPE_REALIZED)

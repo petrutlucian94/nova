@@ -29,6 +29,9 @@ class VMUtilsTestCase(test.NoDBTestCase):
     _FAKE_VHD_PATH = "fake_vhd_path"
     _FAKE_DVD_PATH = "fake_dvd_path"
     _FAKE_VOLUME_DRIVE_PATH = "fake_volume_drive_path"
+    _FAKE_CONTROLLER_PATH = "fake_controller_path"
+    _FAKE_ADDRESS = "fake_address"
+    _FAKE_MOUNTED_DISK_PATH = "fake_mounted_disk_path"
 
     def setUp(self):
         self._vmutils = vmutils.VMUtils()
@@ -110,6 +113,9 @@ class VMUtilsTestCase(test.NoDBTestCase):
         mock_rasd1 = mock.MagicMock()
         mock_rasd1.ResourceSubType = self._vmutils._IDE_DISK_RES_SUB_TYPE
         mock_rasd1.Connection = [self._FAKE_VHD_PATH]
+        mock_rasd1.Parent = self._FAKE_CONTROLLER_PATH
+        mock_rasd1.Address = self._FAKE_ADDRESS
+        mock_rasd1.HostResource = [self._FAKE_MOUNTED_DISK_PATH]
 
         mock_rasd2 = mock.MagicMock()
         mock_rasd2.ResourceSubType = self._vmutils._PHYS_DISK_RES_SUB_TYPE
@@ -141,3 +147,27 @@ class VMUtilsTestCase(test.NoDBTestCase):
         self._vmutils._conn.Msvm_VirtualSystemSettingData.assert_called_with(
             ['ElementName'],
             SettingType=self._vmutils._VIRTUAL_SYSTEM_CURRENT_SETTINGS)
+
+    def test_set_disk_host_resource(self):
+        fake_new_mounted_disk_path = 'fake_new_mounted_disk_path'
+
+        self._lookup_vm()
+        mock_rasds = self._create_mock_disks()
+
+        self._vmutils._get_vm_disks = mock.MagicMock(
+            return_value=([mock_rasds[0]], [mock_rasds[1]]))
+        self._vmutils._modify_virt_resource = mock.MagicMock()
+        self._vmutils._get_disk_resource_address = mock.MagicMock(
+            return_value=self._FAKE_ADDRESS)
+
+        self._vmutils.set_disk_host_resource(
+            self._FAKE_VM_NAME,
+            self._FAKE_CONTROLLER_PATH,
+            self._FAKE_ADDRESS,
+            fake_new_mounted_disk_path)
+        self._vmutils._get_disk_resource_address.assert_called_with(
+            mock_rasds[0])
+        self._vmutils._modify_virt_resource.assert_called_with(
+            mock_rasds[0], self._FAKE_VM_PATH)
+        self.assertEqual(
+            mock_rasds[0].HostResource[0], fake_new_mounted_disk_path)

@@ -136,8 +136,10 @@ class VMUtilsV2TestCase(test.NoDBTestCase):
 
         mock_vm.associators.assert_called_with(
             wmi_result_class='Msvm_VirtualSystemSettingData')
-        mock_vmsettings[0].associators.assert_called_with(
-            wmi_result_class='Msvm_StorageAllocationSettingData')
+        mock_vmsettings[0].associators.assert_any_call(
+            wmi_result_class=self._vmutils._STORAGE_ALLOC_SETTING_DATA_CLASS)
+        mock_vmsettings[0].associators.assert_any_call(
+            wmi_result_class=self._vmutils._RESOURCE_ALLOC_SETTING_DATA_CLASS)
         self.assertEqual([self._FAKE_VHD_PATH], disk_files)
         self.assertEqual([self._FAKE_VOLUME_DRIVE_PATH], volume_drives)
 

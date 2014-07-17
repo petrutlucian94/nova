@@ -27,6 +27,7 @@ class VMUtilsTestCase(test.NoDBTestCase):
 
     _FAKE_VM_NAME = 'fake_vm'
     _FAKE_MEMORY_MB = 2
+    _FAKE_RET_VAL = 0
     _FAKE_VM_PATH = "fake_vm_path"
     _FAKE_VHD_PATH = "fake_vhd_path"
     _FAKE_DVD_PATH = "fake_dvd_path"
@@ -82,6 +83,27 @@ class VMUtilsTestCase(test.NoDBTestCase):
             self.assertTrue(mock_s.DynamicMemoryEnabled)
         else:
             self.assertFalse(mock_s.DynamicMemoryEnabled)
+
+    def test_soft_shutdown_vm(self):
+        mock_vm = self._lookup_vm()
+        mock_shutdown = mock.MagicMock()
+        mock_shutdown.InitiateShutdown.return_value = (self._FAKE_RET_VAL, )
+        mock_vm.associators.return_value = [mock_shutdown]
+
+        with mock.patch.object(self._vmutils, 'check_ret_val') as mock_check:
+            self._vmutils.soft_shutdown_vm(self._FAKE_VM_NAME)
+
+            mock_shutdown.InitiateShutdown.assert_called_once_with(
+                Force=False, Reason=mock.ANY)
+            mock_check.assert_called_once_with(self._FAKE_RET_VAL, None)
+
+    def test_soft_shutdown_vm_no_component(self):
+        mock_vm = self._lookup_vm()
+        mock_vm.associators.return_value = []
+
+        with mock.patch.object(self._vmutils, 'check_ret_val') as mock_check:
+            self._vmutils.soft_shutdown_vm(self._FAKE_VM_NAME)
+            self.assertFalse(mock_check.called)
 
     @mock.patch('nova.virt.hyperv.vmutils.VMUtils._get_vm_disks')
     def test_get_vm_storage_paths(self, mock_get_vm_disks):

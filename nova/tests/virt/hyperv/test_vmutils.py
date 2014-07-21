@@ -33,6 +33,15 @@ class VMUtilsTestCase(test.NoDBTestCase):
     _FAKE_DVD_PATH = "fake_dvd_path"
     _FAKE_VOLUME_DRIVE_PATH = "fake_volume_drive_path"
     _FAKE_CONTROLLER_PATH = "fake_controller_path"
+    _FAKE_VM_UUID = "04e79212-39bc-4065-933c-50f6d48a57f6"
+    _FAKE_INSTANCE = {"name": _FAKE_VM_NAME,
+                      "uuid": _FAKE_VM_UUID}
+    _FAKE_SNAPSHOT_PATH = "fake_snapshot_path"
+    _FAKE_RES_DATA = "fake_res_data"
+    _FAKE_HOST_RESOURCE = "fake_host_resource"
+    _FAKE_CLASS = "FakeClass"
+    _FAKE_RES_PATH = "fake_res_path"
+    _FAKE_RES_NAME = 'fake_res_name'
     _FAKE_ADDRESS = "fake_address"
     _FAKE_MOUNTED_DISK_PATH = "fake_mounted_disk_path"
 
@@ -230,3 +239,56 @@ class VMUtilsTestCase(test.NoDBTestCase):
         self.assertEqual(mock.sentinel.fake_value,
                          compare.Properties_.Item().Value)
         self.assertEqual(compare, response)
+
+    def _assert_remove_resources(self, mock_svc):
+        getattr(mock_svc, self._REMOVE_RESOURCE).assert_called_with(
+            [self._FAKE_RES_PATH], self._FAKE_VM_PATH)
+
+    def test_get_active_instances(self):
+        fake_vm = mock.MagicMock()
+
+        type(fake_vm).ElementName = mock.PropertyMock(
+            side_effect=['active_vm', 'inactive_vm'])
+        type(fake_vm).EnabledState = mock.PropertyMock(
+            side_effect=[constants.HYPERV_VM_STATE_ENABLED,
+                         constants.HYPERV_VM_STATE_DISABLED])
+        self._vmutils._conn.Msvm_ComputerSystem.return_value = (
+            [fake_vm] * 2)
+
+        active_instances = self._vmutils.get_active_instances()
+
+        self.assertIn('active_vm', active_instances)
+        self.assertEqual(1, len(active_instances))
+
+    def _test_get_vm_serial_port_connection(self, new_connection=None):
+        old_serial_connection = 'old_serial_connection'
+
+        mock_vm = self._lookup_vm()
+        mock_vmsettings = [mock.MagicMock()]
+        mock_vm.associators.return_value = mock_vmsettings
+
+        fake_serial_port = mock.MagicMock()
+
+        fake_serial_port.ResourceSubType = (
+            self._vmutils._SERIAL_PORT_RES_SUB_TYPE)
+        fake_serial_port.Connection = [old_serial_connection]
+        mock_rasds = [fake_serial_port]
+        mock_vmsettings[0].associators.return_value = mock_rasds
+        self._vmutils._modify_virt_resource = mock.MagicMock()
+        fake_modify = self._vmutils._modify_virt_resource
+
+        ret_val = self._vmutils.get_vm_serial_port_connection(
+            self._FAKE_VM_NAME, update_connection=new_connection)
+
+        if new_connection:
+            self.assertIn(new_connection, ret_val)
+            fake_modify.assert_called_once_with(fake_serial_port,
+                                                mock_vm.path_())
+        else:
+            self.assertIn(old_serial_connection, ret_val)
+
+    def test_set_vm_serial_port_connection(self):
+        self._test_get_vm_serial_port_connection('new_serial_connection')
+
+    def test_get_vm_serial_port_connection(self):
+        self._test_get_vm_serial_port_connection()

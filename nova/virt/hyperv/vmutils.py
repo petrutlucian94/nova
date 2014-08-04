@@ -143,7 +143,8 @@ class VMUtils(object):
         if si.UpTime is not None:
             up_time = long(si.UpTime)
 
-        enabled_state = self._enabled_states_map[si.EnabledState]
+        enabled_state = self._enabled_states_map.get(si.EnabledState,
+            constants.HYPERV_VM_STATE_ENABLED)
 
         summary_info_dict = {'NumberOfProcessors': si.NumberOfProcessors,
                              'EnabledState': enabled_state,

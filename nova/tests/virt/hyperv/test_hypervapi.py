@@ -793,6 +793,14 @@ class HyperVAPITestCase(HyperVAPIBaseTestCase):
         else:
             self.assertIsNone(self._fetched_image)
 
+    def test_get_instance_disk_info_is_implemented(self):
+        # Ensure that the method has been implemented in the driver
+        try:
+            self._conn.get_instance_disk_info('fake_instance_name')
+        except NotImplementedError:
+            self.fail("test_get_instance_disk_info() should not raise "
+                      "NotImplementedError")
+
     def test_snapshot_with_update_failure(self):
         (snapshot_name, func_call_matcher) = self._setup_snapshot_mocks()
 

@@ -15,6 +15,7 @@
 import mock
 
 from nova.tests.virt.hyperv import test_vmutils
+from nova.virt.hyperv import hostutils
 from nova.virt.hyperv import vmutilsv2
 
 
@@ -31,7 +32,8 @@ class VMUtilsV2TestCase(test_vmutils.VMUtilsTestCase):
 
     _VIRTUAL_SYSTEM_TYPE_REALIZED = 'Microsoft:Hyper-V:System:Realized'
 
-    def setUp(self):
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def setUp(self, mock_check_min_windows_version):
         super(VMUtilsV2TestCase, self).setUp()
         self._vmutils = vmutilsv2.VMUtilsV2()
         self._vmutils._conn = mock.MagicMock()

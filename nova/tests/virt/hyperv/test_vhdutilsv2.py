@@ -18,6 +18,7 @@ from nova import test
 
 from nova.openstack.common import units
 from nova.virt.hyperv import constants
+from nova.virt.hyperv import hostutils
 from nova.virt.hyperv import vhdutilsv2
 
 
@@ -42,7 +43,8 @@ class VHDUtilsV2TestCase(test.NoDBTestCase):
                       'LogicalSectorSize': _FAKE_LOGICAL_SECTOR_SIZE,
                       'Type': _FAKE_TYPE}
 
-    def setUp(self):
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def setUp(self, mock_check_min_windows_version):
         self._vhdutils = vhdutilsv2.VHDUtilsV2()
         self._vhdutils._conn = mock.MagicMock()
         self._vhdutils._vmutils = mock.MagicMock()

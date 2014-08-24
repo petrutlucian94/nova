@@ -16,6 +16,7 @@ import mock
 
 from nova import test
 from nova.tests import fake_instance
+from nova.virt.hyperv import hostutils
 from nova.virt.hyperv import migrationops
 from nova.virt.hyperv import vmutils
 
@@ -23,7 +24,11 @@ from nova.virt.hyperv import vmutils
 class MigrationOpsTestCase(test.NoDBTestCase):
     """Unit tests for the Hyper-V MigrationOps class."""
 
-    def setUp(self):
+    _FAKE_TIMEOUT = 10
+    _FAKE_RETRY_INTERVAL = 5
+
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def setUp(self, mock_check_min_windows_version):
         super(MigrationOpsTestCase, self).setUp()
         self.context = 'fake-context'
 

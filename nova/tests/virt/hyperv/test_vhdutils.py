@@ -17,6 +17,7 @@ import mock
 from nova import test
 
 from nova.virt.hyperv import constants
+from nova.virt.hyperv import hostutils
 from nova.virt.hyperv import vhdutils
 from nova.virt.hyperv import vmutils
 
@@ -31,7 +32,8 @@ class VHDUtilsTestCase(test.NoDBTestCase):
     _FAKE_JOB_PATH = 'fake_job_path'
     _FAKE_RET_VAL = 0
 
-    def setUp(self):
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def setUp(self, mock_check_min_windows_version):
         self._vhdutils = vhdutils.VHDUtils()
         self._vhdutils._conn = mock.MagicMock()
         self._vhdutils._vmutils = mock.MagicMock()
@@ -73,7 +75,9 @@ class VHDUtilsTestCase(test.NoDBTestCase):
                           self._FAKE_PARENT_PATH,
                           fake_new_size)
 
-    def test_get_internal_vhd_size_by_file_size_fixed(self):
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def test_get_internal_vhd_size_by_file_size_fixed(self,
+                                                      mock_check_min_version):
         vhdutil = vhdutils.VHDUtils()
         root_vhd_size = 1 * 1024 ** 3
         vhdutil.get_vhd_info = mock.MagicMock()
@@ -84,7 +88,9 @@ class VHDUtilsTestCase(test.NoDBTestCase):
         expected_vhd_size = 1 * 1024 ** 3 - 512
         self.assertEqual(expected_vhd_size, real_size)
 
-    def test_get_internal_vhd_size_by_file_size_dynamic(self):
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def test_get_internal_vhd_size_by_file_size_dynamic(
+            self, mock_check_min_version):
         vhdutil = vhdutils.VHDUtils()
         root_vhd_size = 20 * 1024 ** 3
         vhdutil.get_vhd_info = mock.MagicMock()
@@ -98,7 +104,9 @@ class VHDUtilsTestCase(test.NoDBTestCase):
         expected_vhd_size = 20 * 1024 ** 3 - 43008
         self.assertEqual(expected_vhd_size, real_size)
 
-    def test_get_internal_vhd_size_by_file_size_differencing(self):
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def test_get_internal_vhd_size_by_file_size_differencing(
+            self, check_min_version):
         # For differencing images, the internal size of the parent vhd
         # is returned
         vhdutil = vhdutils.VHDUtils()

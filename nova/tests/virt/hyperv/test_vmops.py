@@ -17,6 +17,9 @@ import mock
 from nova import exception
 from nova import test
 from nova.tests import fake_instance
+from nova.virt.hyperv import constants
+from nova.virt.hyperv import hostutils
+from nova.virt.hyperv import pathutils
 from nova.virt.hyperv import vmops
 
 
@@ -26,7 +29,8 @@ class VMOpsTestCase(test.NoDBTestCase):
     def __init__(self, test_case_name):
         super(VMOpsTestCase, self).__init__(test_case_name)
 
-    def setUp(self):
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def setUp(self, mock_check_min_windows_version):
         super(VMOpsTestCase, self).setUp()
         self.context = 'fake-context'
 

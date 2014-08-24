@@ -17,6 +17,8 @@ import mock
 
 from nova import test
 
+from nova.virt.hyperv import constants
+from nova.virt.hyperv import hostutils
 from nova.virt.hyperv import vmutils
 
 
@@ -33,7 +35,8 @@ class VMUtilsTestCase(test.NoDBTestCase):
     _FAKE_ADDRESS = "fake_address"
     _FAKE_MOUNTED_DISK_PATH = "fake_mounted_disk_path"
 
-    def setUp(self):
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def setUp(self, mock_check_min_windows_version):
         self._vmutils = vmutils.VMUtils()
         self._vmutils._conn = mock.MagicMock()
 
@@ -171,3 +174,37 @@ class VMUtilsTestCase(test.NoDBTestCase):
             mock_rasds[0], self._FAKE_VM_PATH)
         self.assertEqual(
             mock_rasds[0].HostResource[0], fake_new_mounted_disk_path)
+
+    @mock.patch.object(vmutils.VMUtils, "_clone_wmi_obj")
+    def _test_check_clone_wmi_obj(self, mock_clone_wmi_obj, clone_objects):
+        mock_obj = mock.MagicMock()
+        self._vmutils._clone_wmi_objs = clone_objects
+
+        response = self._vmutils._check_clone_wmi_obj(class_name="fakeClass",
+                                                      obj=mock_obj)
+        if not clone_objects:
+            self.assertEqual(mock_obj, response)
+        else:
+            mock_clone_wmi_obj.assert_called_once_with("fakeClass", mock_obj)
+            self.assertEqual(mock_clone_wmi_obj.return_value, response)
+
+    def test_check_clone_wmi_obj_true(self):
+        self._test_check_clone_wmi_obj(clone_objects=True)
+
+    def test_check_clone_wmi_obj_false(self):
+        self._test_check_clone_wmi_obj(clone_objects=False)
+
+    def test_clone_wmi_obj(self):
+        mock_obj = mock.MagicMock()
+        mock_value = mock.MagicMock()
+        mock_value.Value = mock.sentinel.fake_value
+        mock_obj._properties = [mock.sentinel.property]
+        mock_obj.Properties_.Item.return_value = mock_value
+
+        response = self._vmutils._clone_wmi_obj(
+            class_name="FakeClass", obj=mock_obj)
+
+        compare = self._vmutils._conn.FakeClass.new()
+        self.assertEqual(mock.sentinel.fake_value,
+                         compare.Properties_.Item().Value)
+        self.assertEqual(compare, response)

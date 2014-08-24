@@ -16,6 +16,8 @@ import mock
 
 from nova import test
 
+from nova.tests.virt.hyperv import test_vmutils
+from nova.virt.hyperv import hostutils
 from nova.virt.hyperv import vmutilsv2
 
 
@@ -40,11 +42,11 @@ class VMUtilsV2TestCase(test.NoDBTestCase):
     _FAKE_VHD_PATH = "fake_vhd_path"
     _FAKE_VOLUME_DRIVE_PATH = "fake_volume_drive_path"
 
-    def setUp(self):
+    @mock.patch.object(hostutils.HostUtils, "check_min_windows_version")
+    def setUp(self, mock_check_min_windows_version):
+        super(VMUtilsV2TestCase, self).setUp()
         self._vmutils = vmutilsv2.VMUtilsV2()
         self._vmutils._conn = mock.MagicMock()
-
-        super(VMUtilsV2TestCase, self).setUp()
 
     def _lookup_vm(self):
         mock_vm = mock.MagicMock()

@@ -98,7 +98,10 @@ class ImageCache(object):
             return resized_vhd_path
 
     def get_cached_image(self, context, instance):
-        image_id = instance['image_ref']
+        image_id = instance.get('image_ref')
+
+        if not image_id:
+            return
 
         base_vhd_dir = self._pathutils.get_base_vhd_dir()
         base_vhd_path = os.path.join(base_vhd_dir, image_id)

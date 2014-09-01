@@ -15,6 +15,8 @@
 
 import mock
 
+import os
+
 from nova import test
 from nova.virt.hyperv import ioutils
 
@@ -49,6 +51,7 @@ class IOThreadTestCase(test.NoDBTestCase):
 
         self._iothread._copy(self._FAKE_SRC, self._FAKE_DEST)
 
+        fake_dest.seek.assert_called_once_with(0, os.SEEK_END)
         fake_dest.write.assert_called_once_with(fake_data)
         fake_dest.close.assert_called_once()
         fake_rename.assert_called_once_with(

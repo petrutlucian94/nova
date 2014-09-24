@@ -68,8 +68,14 @@ class LiveMigrationOps(object):
             self._vmops.copy_vm_console_logs(instance_name, dest)
             iscsi_targets = self._livemigrutils.live_migrate_vm(instance_name,
                                                                 dest)
-            for (target_iqn, target_lun) in iscsi_targets:
-                self._volumeops.logout_storage_target(target_iqn)
+            for target_iqn, target_luns in iscsi_targets.items():
+                # Logout the iSCSI target only if there are no LUNs used
+                # by other VMs.
+                total_available_luns = self._volumeops.get_target_lun_count(
+                    target_iqn)
+                if len(target_luns) == total_available_luns:
+                    self._volumeops.logout_storage_target(target_iqn)
+
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.debug(_("Calling live migration recover_method "

@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import collections
 import sys
 
 if sys.platform == 'win32':
@@ -120,11 +121,12 @@ class LiveMigrationUtils(object):
         volutils_remote = volumeutilsv2.VolumeUtilsV2(dest_host)
 
         disk_paths_remote = {}
-        iscsi_targets = []
+        iscsi_targets = collections.defaultdict(list)
         for (rasd_rel_path, disk_path) in disk_paths.items():
             (target_iqn,
              target_lun) = self._volutils.get_target_from_disk_path(disk_path)
-            iscsi_targets.append((target_iqn, target_lun))
+
+            iscsi_targets[target_iqn].append(target_lun)
 
             dev_num = volutils_remote.get_device_number_for_target(target_iqn,
                                                                    target_lun)
@@ -224,7 +226,7 @@ class LiveMigrationUtils(object):
         rmt_ip_addr_list = self._get_remote_ip_address_list(conn_v2_remote,
                                                             dest_host)
 
-        iscsi_targets = []
+        iscsi_targets = {}
         planned_vm = None
         disk_paths = self._get_physical_disk_paths(vm_name)
         if disk_paths:

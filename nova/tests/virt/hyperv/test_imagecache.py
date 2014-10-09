@@ -21,13 +21,14 @@ from oslo.config import cfg
 from nova import exception
 from nova import test
 from nova.tests import fake_instance
+from nova.tests.virt.hyperv import test_base
 from nova.virt.hyperv import constants
 from nova.virt.hyperv import imagecache
 
 CONF = cfg.CONF
 
 
-class ImageCacheTestCase(test.NoDBTestCase):
+class ImageCacheTestCase(test_base.HyperVBaseTestCase):
     """Unit tests for the Hyper-V ImageCache class."""
 
     FAKE_BASE_DIR = 'fake/base/dir'
@@ -39,14 +40,6 @@ class ImageCacheTestCase(test.NoDBTestCase):
 
         self.context = 'fake-context'
         self.instance = fake_instance.fake_instance_obj(self.context)
-
-        # utilsfactory will check the host OS version via get_hostutils,
-        # in order to return the proper Utils Class, so it must be mocked.
-        patched_func = mock.patch.object(imagecache.utilsfactory,
-                                         "get_hostutils")
-
-        patched_func.start()
-        self.addCleanup(patched_func.stop)
 
         self.imagecache = imagecache.ImageCache()
         self.imagecache._pathutils = mock.MagicMock()

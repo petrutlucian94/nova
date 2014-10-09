@@ -16,14 +16,14 @@ from eventlet import timeout as etimeout
 import mock
 
 from nova import exception
-from nova import test
 from nova.tests import fake_instance
+from nova.tests.virt.hyperv import test_base
 from nova.virt.hyperv import constants
 from nova.virt.hyperv import vmops
 from nova.virt.hyperv import vmutils
 
 
-class VMOpsTestCase(test.NoDBTestCase):
+class VMOpsTestCase(test_base.HyperVBaseTestCase):
     """Unit tests for the Hyper-V VMOps class."""
 
     _FAKE_TIMEOUT = 2
@@ -34,13 +34,6 @@ class VMOpsTestCase(test.NoDBTestCase):
     def setUp(self):
         super(VMOpsTestCase, self).setUp()
         self.context = 'fake-context'
-
-        # utilsfactory will check the host OS version via get_hostutils,
-        # in order to return the proper Utils Class, so it must be mocked.
-        patched_func = mock.patch.object(vmops.utilsfactory,
-                                 "get_hostutils")
-        patched_func.start()
-        self.addCleanup(patched_func.stop)
 
         self._vmops = vmops.VMOps()
         self._vmops._pathutils = mock.Mock()

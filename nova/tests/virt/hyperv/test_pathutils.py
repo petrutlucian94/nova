@@ -16,20 +16,22 @@ import os
 
 import mock
 
-from nova import test
+from nova.tests.virt.hyperv import test_base
 from nova.virt.hyperv import constants
 from nova.virt.hyperv import pathutils
 from nova.virt.hyperv import vmutils
 
 
-class PathUtilsTestCase(test.NoDBTestCase):
+class PathUtilsTestCase(test_base.HyperVBaseTestCase):
     """Unit tests for the Hyper-V PathUtils class."""
 
     def setUp(self):
+        super(PathUtilsTestCase, self).setUp()
         self.fake_instance_dir = os.path.join('C:', 'fake_instance_dir')
         self.fake_instance_name = 'fake_instance_name'
+
         self._pathutils = pathutils.PathUtils()
-        super(PathUtilsTestCase, self).setUp()
+        self._pathutils._smb_conn = mock.MagicMock()
 
     def _mock_lookup_configdrive_path(self, ext):
         self._pathutils.get_instance_dir = mock.MagicMock(
@@ -85,9 +87,68 @@ class PathUtilsTestCase(test.NoDBTestCase):
                                          mock.sentinel.DEST_HOST)
 
         mock_get_configdrive_path.assert_has_calls(
-            [mock.call(self.fake_instance_name, constants.IDE_DVD_FORMAT),
-             mock.call(self.fake_instance_name, constants.IDE_DVD_FORMAT,
+            [mock.call(self.fake_instance_name, constants.DVD_FORMAT),
+             mock.call(self.fake_instance_name, constants.DVD_FORMAT,
                        remote_server=mock.sentinel.DEST_HOST)])
 
         mock_copyfile.assert_called_once_with(mock.sentinel.FAKE_LOCAL_PATH,
                                               mock.sentinel.FAKE_REMOTE_PATH)
+
+    @mock.patch.object(pathutils.PathUtils, 'unmount_smb_share')
+    @mock.patch('os.path.exists')
+    def _test_check_smb_mapping(self, mock_exists, mock_unmount_smb_share,
+                                existing_mappings=True, share_available=False):
+        mock_exists.return_value = share_available
+
+        fake_mappings = (
+            [mock.sentinel.smb_mapping] if existing_mappings else [])
+
+        self._pathutils._smb_conn.Msft_SmbMapping.return_value = (
+            fake_mappings)
+
+        ret_val = self._pathutils.check_smb_mapping(
+            mock.sentinel.share_path)
+
+        self.assertEqual(existing_mappings and share_available, ret_val)
+        if existing_mappings and not share_available:
+            mock_unmount_smb_share.assert_called_once_with(
+                mock.sentinel.share_path, force=True)
+
+    def test_check_mapping(self):
+        self._test_check_smb_mapping()
+
+    def test_remake_unavailable_mapping(self):
+        self._test_check_smb_mapping(existing_mappings=True,
+                                     share_available=False)
+
+    def test_available_mapping(self):
+        self._test_check_smb_mapping(existing_mappings=True,
+                                     share_available=True)
+
+    def test_mount_smb_share(self):
+        fake_create = self._pathutils._smb_conn.Msft_SmbMapping.Create
+        self._pathutils.mount_smb_share(mock.sentinel.share_path,
+                                        mock.sentinel.username,
+                                        mock.sentinel.password)
+        fake_create.assert_called_once_with(
+            RemotePath=mock.sentinel.share_path,
+            UserName=mock.sentinel.username,
+            Password=mock.sentinel.password)
+
+    def _test_unmount_smb_share(self, force=False):
+        fake_mapping = mock.Mock()
+        smb_mapping_class = self._pathutils._smb_conn.Msft_SmbMapping
+        smb_mapping_class.return_value = [fake_mapping]
+
+        self._pathutils.unmount_smb_share(mock.sentinel.share_path,
+                                          force)
+
+        smb_mapping_class.assert_called_once_with(
+            RemotePath=mock.sentinel.share_path)
+        fake_mapping.Remove.assert_called_once_with(Force=force)
+
+    def test_soft_unmount_smb_share(self):
+        self._test_unmount_smb_share()
+
+    def test_force_unmount_smb_share(self):
+        self._test_unmount_smb_share(force=True)

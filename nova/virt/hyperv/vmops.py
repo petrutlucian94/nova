@@ -33,14 +33,12 @@ from oslo_utils import uuidutils
 from nova.api.metadata import base as instance_metadata
 from nova import exception
 from nova.i18n import _, _LI, _LE, _LW
-from nova.openstack.common import fileutils
 from nova.openstack.common import loopingcall
 from nova import utils
 from nova.virt import configdrive
 from nova.virt import hardware
 from nova.virt.hyperv import constants
 from nova.virt.hyperv import imagecache
-from nova.virt.hyperv import ioutils
 from nova.virt.hyperv import utilsfactory
 from nova.virt.hyperv import vmutils
 from nova.virt.hyperv import volumeops
@@ -122,10 +120,6 @@ class VMOps(object):
         'nova.virt.hyperv.vif.HyperVNovaNetworkVIFDriver',
     }
 
-    # The console log is stored in two files, each should have at most half of
-    # the maximum console log size.
-    _MAX_CONSOLE_LOG_FILE_SIZE = units.Mi / 2
-
     def __init__(self):
         self._vmutils = utilsfactory.get_vmutils()
         self._vhdutils = utilsfactory.get_vhdutils()
@@ -135,7 +129,6 @@ class VMOps(object):
         self._imagecache = imagecache.ImageCache()
         self._vif_driver = None
         self._load_vif_driver_class()
-        self._vm_log_writers = {}
 
     def _load_vif_driver_class(self):
         try:
@@ -272,11 +265,13 @@ class VMOps(object):
             root_vhd_path = self._create_root_vhd(context, instance)
 
         eph_vhd_path = self.create_ephemeral_vhd(instance)
+        # TODO(lpetrut): move this to the create_instance method.
         vm_gen = self.get_image_vm_generation(root_vhd_path, image_meta)
 
         try:
             self.create_instance(instance, network_info, block_device_info,
-                                 root_vhd_path, eph_vhd_path, vm_gen)
+                                 root_vhd_path, eph_vhd_path,
+                                 vm_gen, image_meta)
 
             if configdrive.required_by(instance):
                 configdrive_path = self._create_config_drive(instance,
@@ -292,7 +287,7 @@ class VMOps(object):
                 self.destroy(instance)
 
     def create_instance(self, instance, network_info, block_device_info,
-                        root_vhd_path, eph_vhd_path, vm_gen):
+                        root_vhd_path, eph_vhd_path, vm_gen, image_meta):
         instance_name = instance.name
         instance_path = os.path.join(CONF.instances_path, instance_name)
 
@@ -325,6 +320,9 @@ class VMOps(object):
                                        instance_name,
                                        ebs_root)
 
+        serial_ports = self._get_image_serial_port_settings(image_meta)
+        self._create_vm_com_port_pipes(instance, serial_ports)
+
         for vif in network_info:
             LOG.debug('Creating nic for instance', instance=instance)
             self._vmutils.create_nic(instance_name,
@@ -334,8 +332,6 @@ class VMOps(object):
 
         if CONF.hyperv.enable_instance_metrics_collection:
             self._vmutils.enable_vm_metrics_collection(instance_name)
-
-        self._create_vm_com_port_pipe(instance)
 
     def _attach_drive(self, instance_name, path, drive_addr, ctrl_disk_addr,
                       controller_type, drive_type=constants.DISK):
@@ -535,6 +531,7 @@ class VMOps(object):
     def power_off(self, instance, timeout=0, retry_interval=0):
         """Power off the specified instance."""
         LOG.debug("Power off instance", instance=instance)
+
         if retry_interval <= 0:
             retry_interval = SHUTDOWN_TIME_INCREMENT
         if timeout and self._soft_shutdown(instance, timeout, retry_interval):
@@ -555,18 +552,9 @@ class VMOps(object):
 
     def _set_vm_state(self, instance, req_state):
         instance_name = instance.name
-        instance_uuid = instance.uuid
 
         try:
             self._vmutils.set_vm_state(instance_name, req_state)
-
-            if req_state in (constants.HYPERV_VM_STATE_DISABLED,
-                             constants.HYPERV_VM_STATE_REBOOT):
-                self._delete_vm_console_log(instance)
-            if req_state in (constants.HYPERV_VM_STATE_ENABLED,
-                             constants.HYPERV_VM_STATE_REBOOT):
-                self.log_vm_serial_output(instance_name,
-                                          instance_uuid)
 
             LOG.debug("Successfully changed state of VM %(instance_name)s"
                       " to: %(req_state)s", {'instance_name': instance_name,
@@ -616,91 +604,35 @@ class VMOps(object):
         """Resume guest state when a host is booted."""
         self.power_on(instance, block_device_info)
 
-    def log_vm_serial_output(self, instance_name, instance_uuid):
-        # Uses a 'thread' that will run in background, reading
-        # the console output from the according named pipe and
-        # write it to a file.
-        console_log_path = self._pathutils.get_vm_console_log_paths(
-            instance_name)[0]
-        pipe_path = r'\\.\pipe\%s' % instance_uuid
-
-        @utils.synchronized(pipe_path)
-        def log_serial_output():
-            vm_log_writer = self._vm_log_writers.get(instance_uuid)
-            if vm_log_writer and vm_log_writer.is_active():
-                LOG.debug("Instance %s log writer is already running.",
-                          instance_name)
-            else:
-                vm_log_writer = ioutils.IOThread(
-                    pipe_path, console_log_path,
-                    self._MAX_CONSOLE_LOG_FILE_SIZE)
-                vm_log_writer.start()
-                self._vm_log_writers[instance_uuid] = vm_log_writer
-
-        log_serial_output()
-
-    def get_console_output(self, instance):
-        console_log_paths = (
-            self._pathutils.get_vm_console_log_paths(instance.name))
-
-        try:
-            instance_log = ''
-            # Start with the oldest console log file.
-            for console_log_path in console_log_paths[::-1]:
-                if os.path.exists(console_log_path):
-                    with open(console_log_path, 'rb') as fp:
-                        instance_log += fp.read()
-            return instance_log
-        except IOError as err:
-            msg = _("Could not get instance console log. Error: %s") % err
-            raise vmutils.HyperVException(msg, instance=instance)
-
-    def _delete_vm_console_log(self, instance):
-        console_log_files = self._pathutils.get_vm_console_log_paths(
-            instance.name)
-
-        vm_log_writer = self._vm_log_writers.get(instance.uuid)
-        if vm_log_writer:
-            vm_log_writer.join()
-
-        for log_file in console_log_files:
-            fileutils.delete_if_exists(log_file)
-
-    def copy_vm_console_logs(self, vm_name, dest_host):
-        local_log_paths = self._pathutils.get_vm_console_log_paths(
-            vm_name)
-        remote_log_paths = self._pathutils.get_vm_console_log_paths(
-            vm_name, remote_server=dest_host)
-
-        for local_log_path, remote_log_path in zip(local_log_paths,
-                                                   remote_log_paths):
-            if self._pathutils.exists(local_log_path):
-                self._pathutils.copy(local_log_path,
-                                     remote_log_path)
-
-    def _create_vm_com_port_pipe(self, instance):
-        # Creates a pipe to the COM 0 serial port of the specified vm.
-        pipe_path = r'\\.\pipe\%s' % instance.uuid
-        self._vmutils.get_vm_serial_port_connection(
-            instance.name, update_connection=pipe_path)
-
-    def restart_vm_log_writers(self):
-        # Restart the VM console log writers after nova compute restarts.
-        active_instances = self._vmutils.get_active_instances()
-        for instance_name in active_instances:
-            instance_path = self._pathutils.get_instance_dir(instance_name)
-
-            # Skip instances that are not created by Nova
-            if not os.path.exists(instance_path):
-                continue
-
-            vm_serial_conn = self._vmutils.get_vm_serial_port_connection(
-                instance_name)
-            if vm_serial_conn:
-                instance_uuid = os.path.basename(vm_serial_conn)
-                self.log_vm_serial_output(instance_name, instance_uuid)
+    def _create_vm_com_port_pipes(self, instance, serial_ports):
+        for port_number, port_type in serial_ports.iteritems():
+            pipe_path = r'\\.\pipe\%s_%s' % (instance.uuid, port_type)
+            self._vmutils.set_vm_serial_port_connection(
+                instance.name, port_number, pipe_path)
 
     def copy_vm_dvd_disks(self, vm_name, dest_host):
         dvd_disk_paths = self._vmutils.get_vm_dvd_disk_paths(vm_name)
         for path in dvd_disk_paths:
             self._pathutils.copyfile(path, dest_host)
+
+    def _get_image_serial_port_settings(self, image_meta):
+        image_props = image_meta['properties']
+        serial_ports = {}
+
+        for image_prop, port_type in constants.SERIAL_PORT_TYPES.iteritems():
+            port_number = int(image_props.get(
+                image_prop,
+                constants.DEFAULT_SERIAL_CONSOLE_PORT))
+
+            if port_number not in [1, 2]:
+                err_msg = _("Invalid serial port number: %(port_number)s. "
+                            "Only COM 1 and COM 2 are available.")
+                raise vmutils.HyperVException(
+                    err_msg % {'port_number': port_number})
+
+            existing_type = serial_ports.get(port_number)
+            if (not existing_type or
+                    existing_type == constants.SERIAL_PORT_TYPE_RO):
+                serial_ports[port_number] = port_type
+
+        return serial_ports

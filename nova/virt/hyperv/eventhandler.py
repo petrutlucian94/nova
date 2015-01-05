@@ -28,6 +28,7 @@ from nova.i18n import _LW
 from nova.virt import event as virtevent
 from nova.virt.hyperv import constants
 from nova.virt.hyperv import utilsfactory
+from nova.virt.hyperv import serialconsoleops
 
 LOG = logging.getLogger(__name__)
 
@@ -60,16 +61,15 @@ class InstanceEventHandler(object):
             virtevent.EVENT_LIFECYCLE_SUSPENDED
     }
 
-    def __init__(self, state_change_callback=None,
-                 running_state_callback=None):
+    def __init__(self, state_change_callback=None):
         self._vmutils = utilsfactory.get_vmutils()
+        self._serial_console_ops = serialconsoleops.SerialConsoleOps()
         self._listener = self._vmutils.get_vm_state_change_listener(
             event_type=self._MODIFICATION_EVENT,
             timeframe=CONF.hyperv.power_state_check_timeframe)
 
         self._polling_interval = CONF.hyperv.power_state_event_polling_interval
         self._state_change_callback = state_change_callback
-        self._running_state_callback = running_state_callback
 
         self._last_state = {}
 
@@ -120,9 +120,13 @@ class InstanceEventHandler(object):
                                           instance_state)
         eventlet.spawn_n(self._state_change_callback, virt_event)
 
+        eventlet.spawn_n(self._handle_serial_console_workers,
+                         instance_name, instance_state)
+
+    def _handle_serial_console_workers(self, instance_name, instance_state):
+        self._serial_console_ops.stop_console_handler(instance_name)
         if instance_state == constants.HYPERV_VM_STATE_ENABLED:
-            eventlet.spawn_n(self._running_state_callback,
-                             instance_name, instance_uuid)
+            self._serial_console_ops.start_console_handler(instance_name)
 
     def _get_instance_uuid(self, instance_name):
         try:

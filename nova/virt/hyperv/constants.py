@@ -17,6 +17,8 @@
 Constants used in ops classes
 """
 
+from oslo_utils import units
+
 from nova.compute import arch
 from nova.compute import power_state
 
@@ -100,3 +102,21 @@ IMAGE_PROP_VM_GEN_2 = "hyperv-gen2"
 
 VM_GEN_1 = 1
 VM_GEN_2 = 2
+
+IMAGE_PROP_INTERACTIVE_SERIAL_PORT = "interactive_serial_port"
+IMAGE_PROP_LOGGING_SERIAL_PORT = "logging_serial_port"
+
+SERIAL_PORT_TYPE_RO = 'ro'
+SERIAL_PORT_TYPE_RW = 'rw'
+
+SERIAL_PORT_TYPES = {
+    IMAGE_PROP_LOGGING_SERIAL_PORT: SERIAL_PORT_TYPE_RO,
+    IMAGE_PROP_INTERACTIVE_SERIAL_PORT: SERIAL_PORT_TYPE_RW
+}
+
+# The default serial console port number used for
+# logging and interactive sessions.
+DEFAULT_SERIAL_CONSOLE_PORT = 1
+
+SERIAL_CONSOLE_BUFFER_SIZE = 4 * units.Ki
+MAX_CONSOLE_LOG_FILE_SIZE = units.Mi / 2

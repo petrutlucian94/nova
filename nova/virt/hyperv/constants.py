@@ -18,6 +18,7 @@ Constants used in ops classes
 """
 
 from nova.compute import power_state
+from oslo.utils import units
 
 HYPERV_VM_STATE_ENABLED = 2
 HYPERV_VM_STATE_DISABLED = 3
@@ -88,3 +89,6 @@ SCSI_CONTROLLER_SLOTS_NUMBER = 64
 HOST_POWER_ACTION_SHUTDOWN = "shutdown"
 HOST_POWER_ACTION_REBOOT = "reboot"
 HOST_POWER_ACTION_STARTUP = "startup"
+
+SERIAL_CONSOLE_BUFFER_SIZE = 4 * units.Ki
+MAX_CONSOLE_LOG_FILE_SIZE = units.Mi / 2

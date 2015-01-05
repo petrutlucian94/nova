@@ -23,6 +23,7 @@ if sys.platform == 'win32':
 from oslo.config import cfg
 
 from nova.i18n import _
+from nova.openstack.common import fileutils
 from nova.openstack.common import log as logging
 from nova import utils
 from nova.virt.hyperv import constants
@@ -179,6 +180,23 @@ class PathUtils(object):
                                              remote_server)
         console_log_path = os.path.join(instance_dir, 'console.log')
         return console_log_path, console_log_path + '.1'
+
+    def delete_vm_console_logs(self, vm_name):
+        console_log_files = self.get_vm_console_log_paths(vm_name)
+        for log_file in console_log_files:
+            fileutils.delete_if_exists(log_file)
+
+    def copy_vm_console_logs(self, vm_name, dest_host):
+        local_log_paths = self._pathutils.get_vm_console_log_paths(
+            vm_name)
+        remote_log_paths = self._pathutils.get_vm_console_log_paths(
+            vm_name, remote_server=dest_host)
+
+        for local_log_path, remote_log_path in zip(local_log_paths,
+                                                   remote_log_paths):
+            if self._pathutils.exists(local_log_path):
+                self._pathutils.copy(local_log_path,
+                                     remote_log_path)
 
     def check_smb_mapping(self, smbfs_share):
         mappings = self._smb_conn.Msft_SmbMapping(RemotePath=smbfs_share)

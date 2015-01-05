@@ -24,8 +24,8 @@ from oslo.utils import excutils
 from nova.i18n import _
 from nova.openstack.common import log as logging
 from nova.virt.hyperv import imagecache
+from nova.virt.hyperv import serialconsoleops
 from nova.virt.hyperv import utilsfactory
-from nova.virt.hyperv import vmops
 from nova.virt.hyperv import volumeops
 
 LOG = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class LiveMigrationOps(object):
             self._livemigrutils = None
 
         self._pathutils = utilsfactory.get_pathutils()
-        self._vmops = vmops.VMOps()
+        self._serialconsoleops = serialconsoleops.SerialConsoleOps()
         self._volumeops = volumeops.VolumeOps()
         self._imagecache = imagecache.ImageCache()
 
@@ -65,7 +65,7 @@ class LiveMigrationOps(object):
         instance_name = instance_ref["name"]
 
         try:
-            self._vmops.copy_vm_console_logs(instance_name, dest)
+            self._pathutils.copy_vm_console_logs(instance_name, dest)
             self._livemigrutils.live_migrate_vm(instance_name,
                                                 dest)
         except Exception:
@@ -101,8 +101,7 @@ class LiveMigrationOps(object):
                                            network_info, block_migration):
         LOG.debug("post_live_migration_at_destination called",
                   instance=instance_ref)
-        self._vmops.log_vm_serial_output(instance_ref['name'],
-                                         instance_ref['uuid'])
+        self._serialconsoleops.start_console_handler(instance_ref.name)
 
     @check_os_version_requirement
     def check_can_live_migrate_destination(self, ctxt, instance_ref,

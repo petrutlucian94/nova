@@ -27,6 +27,7 @@ if sys.platform == 'win32':
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import uuidutils
 
 from nova import exception
 from nova.i18n import _, _LW
@@ -764,3 +765,23 @@ class VMUtils(object):
             if v.EnabledState == constants.HYPERV_VM_STATE_ENABLED]
 
         return active_vm_names
+
+    def get_vm_state_change_listener(self, event_type, timeframe):
+        return self._conn.Msvm_ComputerSystem.watch_for(
+            event_type,
+            delay_secs=timeframe,
+            fields=["EnabledState"])
+
+    def _get_instance_notes(self, vm_name):
+        vm = self._lookup_vm_check(vm_name)
+        vmsettings = self._get_vm_setting_data(vm)
+        return [note for note in vmsettings.Notes.split('\n') if note]
+
+    def get_instance_uuid(self, vm_name):
+        instance_notes = self._get_instance_notes(vm_name)
+        if instance_notes and uuidutils.is_uuid_like(instance_notes[0]):
+            return instance_notes[0]
+
+    def get_vm_power_state(self, vm_enabled_state):
+        return self._enabled_states_map.get(vm_enabled_state,
+                                            constants.HYPERV_VM_STATE_OTHER)

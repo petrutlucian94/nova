@@ -334,6 +334,7 @@ class VMOps(object):
             self._vmutils.enable_vm_metrics_collection(instance_name)
 
         self._create_vm_com_port_pipe(instance)
+        self._set_instance_disk_qos_specs(instance)
 
     def _attach_drive(self, instance_name, path, drive_addr, ctrl_disk_addr,
                       controller_type, drive_type=constants.DISK):
@@ -688,3 +689,19 @@ class VMOps(object):
             if vm_serial_conn:
                 instance_uuid = os.path.basename(vm_serial_conn)
                 self.log_vm_serial_output(instance_name, instance_uuid)
+
+    def _set_instance_disk_qos_specs(self, instance):
+        min_iops, max_iops = self._get_storage_qos_specs(instance)
+        vm_disks = self._vmutils.get_vm_storage_paths(instance.name)[0]
+        for disk_path in vm_disks:
+            self._vmutils.set_disk_qos_specs(instance.name, disk_path,
+                                             min_iops, max_iops)
+
+    def _get_storage_qos_specs(self, instance):
+        extra_specs = instance.flavor.get('extra_specs', {})
+        storage_qos_specs = {}
+        for spec in extra_specs:
+            scope, key = spec.split(':')
+            if scope == 'storage_qos':
+                storage_qos_specs[key] = extra_specs[spec]
+        return self._volumeops.parse_disk_qos_specs(storage_qos_specs)

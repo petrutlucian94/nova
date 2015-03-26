@@ -298,3 +298,12 @@ class VMUtilsV2(vmutils.VMUtils):
             Subject=element.path_(),
             Definition=definition_path,
             MetricCollectionEnabled=self._METRIC_ENABLED)
+
+    def set_disk_qos_specs(self, vm_name, disk_path, min_iops, max_iops):
+        vm = self._lookup_vm_check(vm_name)
+
+        disk_resource = self._get_mounted_disk_resource_from_path(
+            disk_path, is_physical=False)
+        disk_resource.IOPSLimit = max_iops
+        disk_resource.IOPSReservation = min_iops
+        self._modify_virt_resource(disk_resource, vm.path_())

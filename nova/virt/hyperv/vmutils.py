@@ -761,3 +761,7 @@ class VMUtils(object):
             if v.EnabledState == constants.HYPERV_VM_STATE_ENABLED]
 
         return active_vm_names
+
+    def set_disk_qos_specs(self, vm_name, disk_path, min_iops, max_iops):
+        LOG.warn(_LW(r"The root/virtualization WMI namespace does not "
+                      "support QoS. Ignoring QoS specs."))

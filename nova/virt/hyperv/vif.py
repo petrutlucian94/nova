@@ -16,10 +16,9 @@
 
 import abc
 
+from os_win import utilsfactory
 from oslo_config import cfg
 from oslo_log import log as logging
-
-from nova.virt.hyperv import utilsfactory
 
 hyperv_opts = [
     cfg.StrOpt('vswitch_name',

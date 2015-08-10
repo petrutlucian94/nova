@@ -492,6 +492,20 @@ class ComputeServiceInUse(NovaException):
     msg_fmt = _("Compute service of %(host)s is still in use.")
 
 
+class ComputeDriverException(NovaException):
+    """Encapsulates an exception raised by a Nova Compute Driver.
+
+    Merely instantiating this exception records the current exception
+    information.
+    """
+    msg_fmt = _("An exception occured in the Nova Compute Driver. Exception "
+                "message: %(message)s")
+
+    def __init__(self, message=None, **kwargs):
+        super(ComputeDriverException, self).__init__(message, **kwargs)
+        self.exc_info = sys.exc_info()
+
+
 class UnableToMigrateToSelf(Invalid):
     msg_fmt = _("Unable to migrate instance (%(instance_id)s) "
                 "to current host (%(host)s).")

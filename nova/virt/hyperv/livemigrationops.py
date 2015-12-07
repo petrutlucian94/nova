@@ -95,6 +95,15 @@ class LiveMigrationOps(object):
 
         self._volumeops.initialize_volumes_connection(block_device_info)
 
+        disk_path_mapping = self._volumeops.get_disk_path_mapping(
+            block_device_info)
+        if disk_path_mapping:
+            # We create a planned VM, ensuring that volumes will remain
+            # attached after the VM is migrated.
+            self._livemigrutils.create_planned_vm(instance.name,
+                                                  instance.host,
+                                                  disk_path_mapping)
+
     @check_os_version_requirement
     def post_live_migration(self, context, instance, block_device_info):
         self._volumeops.disconnect_volumes(block_device_info)
@@ -115,7 +124,8 @@ class LiveMigrationOps(object):
                                            src_compute_info, dst_compute_info,
                                            block_migration=False,
                                            disk_over_commit=False):
-        LOG.debug("check_can_live_migrate_destination called", instance_ref)
+        LOG.debug("check_can_live_migrate_destination called %s",
+                  instance_ref)
         return {}
 
     @check_os_version_requirement
@@ -126,5 +136,5 @@ class LiveMigrationOps(object):
     @check_os_version_requirement
     def check_can_live_migrate_source(self, ctxt, instance_ref,
                                       dest_check_data):
-        LOG.debug("check_can_live_migrate_source called", instance_ref)
+        LOG.debug("check_can_live_migrate_source called %s", instance_ref)
         return dest_check_data

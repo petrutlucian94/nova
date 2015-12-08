@@ -17,9 +17,11 @@
 """
 Management class for Storage-related functions (attach, detach, etc).
 """
+import abc
 import collections
 import os
 import re
+import six
 import time
 
 from os_win import exceptions as os_win_exc
@@ -65,12 +67,10 @@ class VolumeOps(object):
     """
 
     def __init__(self):
-        self._vmutils = utilsfactory.get_vmutils()
-        self._volutils = utilsfactory.get_iscsi_initiator_utils()
-        self._initiator = None
         self._default_root_device = 'vda'
         self.volume_drivers = {'smbfs': SMBFSVolumeDriver(),
-                               'iscsi': ISCSIVolumeDriver()}
+                               'iscsi': ISCSIVolumeDriver(),
+                               'fibre_channel': FCVolumeDriver()}
 
     def _get_volume_driver(self, driver_type=None, connection_info=None):
         if connection_info:
@@ -131,16 +131,14 @@ class VolumeOps(object):
             disk_address += 1
 
     def get_volume_connector(self, instance):
-        if not self._initiator:
-            self._initiator = self._volutils.get_iscsi_initiator()
-            if not self._initiator:
-                LOG.warning(_LW('Could not determine iscsi initiator name'),
-                            instance=instance)
-        return {
+        connector = {
             'ip': CONF.my_block_storage_ip,
             'host': CONF.host,
-            'initiator': self._initiator,
         }
+        for volume_driver_type, volume_driver in self.volume_drivers.items():
+            connector_updates = volume_driver.get_volume_connector_props()
+            connector.update(connector_updates)
+        return connector
 
     def initialize_volumes_connection(self, block_device_info):
         mapping = driver.block_device_info_get_mapping(block_device_info)
@@ -158,11 +156,52 @@ class VolumeOps(object):
             block_devices[volume_type].append(volume)
         return block_devices
 
+@six.add_metaclass(abc.ABCMeta)
+class BaseVolumeDriver(object):
+    @abc.abstractmethod
+    def initialize_volume_connection(self, connection_info):
+        pass
 
-class ISCSIVolumeDriver(object):
+    @abc.abstractmethod
+    def attach_volume(self, connection_info, instance_name, ebs_root=False):
+        pass
+
+    @abc.abstractmethod
+    def disconnect_volumes(self, block_device_info):
+        pass
+
+    @abc.abstractmethod
+    def detach_volume(self, connection_info, instance_name):
+        pass
+
+    @abc.abstractmethod
+    def fix_instance_volume_disk_path(self, instance_name, block_device_info):
+        pass
+
+    def get_volume_connector_props(self):
+        return {}
+
+
+class ISCSIVolumeDriver(BaseVolumeDriver):
     def __init__(self):
         self._vmutils = utilsfactory.get_vmutils()
         self._volutils = utilsfactory.get_iscsi_initiator_utils()
+        self._initiator = None
+
+    @property
+    def initiator(self):
+        if not self._initiator:
+            self._initiator = self._volutils.get_iscsi_initiator()
+        return self._initiator
+
+    def get_volume_connector_props(self):
+        props = {}
+        if self.initiator:
+            props['initiator'] = self.initiator
+        else:
+            LOG.warning(_LW('Could not determine iscsi initiator name'),
+                        instance=instance)
+        return props
 
     def login_storage_target(self, connection_info):
         data = connection_info['data']
@@ -355,7 +394,7 @@ def export_path_synchronized(f):
     return wrapper
 
 
-class SMBFSVolumeDriver(object):
+class SMBFSVolumeDriver(BaseVolumeDriver):
     def __init__(self):
         self._pathutils = utilsfactory.get_pathutils()
         self._vmutils = utilsfactory.get_vmutils()
@@ -457,3 +496,43 @@ class SMBFSVolumeDriver(object):
         def unmount_synchronized():
             self._pathutils.unmount_smb_share(export_path)
         unmount_synchronized()
+
+
+class FCVolumeDriver(BaseVolumeDriver):
+    def __init__(self):
+        self._fc_utils = utilsfactory.get_fc_utils()
+
+    def get_volume_connector_props(self):
+        props = {}
+        fc_hba_ports = self._fc_utils.get_fc_hba_ports()
+        if fc_hba_ports:
+            wwnns = []
+            wwpns = []
+            for port in fc_hba_ports:
+                wwnn = self._parse_wwn(port['node_name'])
+                wwpn = self._parse_wwn(port['port_name'])
+                wwnns.append(wwnn)
+                wwpns.append(wwpn)
+            props['wwpns'] = wwpns
+            props['wwnns'] = list(set(wwnns))
+        return props
+
+    def _parse_wwn(self, wwn):
+        return ''.join('{:02X}'.format(b).lower() for b in wwn)
+
+    def initialize_volume_connection(self, connection_info):
+        LOG.info("Initializing FC volume connection %s" % connection_info)
+        import pdb; pdb.set_trace()
+
+    def attach_volume(self, connection_info, instance_name, ebs_root=False):
+        LOG.info("Attaching FC volume: %s" % connection_info)
+        import pdb; pdb.set_trace()
+
+    def disconnect_volumes(self, block_device_info):
+        pass
+
+    def detach_volume(self, connection_info, instance_name):
+        pass
+
+    def fix_instance_volume_disk_path(self, instance_name, block_device_info):
+        pass

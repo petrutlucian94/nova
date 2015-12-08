@@ -17,15 +17,18 @@
 """
 Management class for Storage-related functions (attach, detach, etc).
 """
+import abc
 import collections
 import os
 import re
+import six
 import time
 
 from os_win import exceptions as os_win_exc
 from os_win import utilsfactory
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_service import loopingcall
 from oslo_utils import excutils
 from six.moves import range
 
@@ -65,12 +68,10 @@ class VolumeOps(object):
     """
 
     def __init__(self):
-        self._vmutils = utilsfactory.get_vmutils()
-        self._volutils = utilsfactory.get_iscsi_initiator_utils()
-        self._initiator = None
         self._default_root_device = 'vda'
         self.volume_drivers = {'smbfs': SMBFSVolumeDriver(),
-                               'iscsi': ISCSIVolumeDriver()}
+                               'iscsi': ISCSIVolumeDriver(),
+                               'fibre_channel': FCVolumeDriver()}
 
     def _get_volume_driver(self, driver_type=None, connection_info=None):
         if connection_info:
@@ -98,11 +99,20 @@ class VolumeOps(object):
             volume_driver.disconnect_volumes(block_device_mapping)
 
     def attach_volume(self, connection_info, instance_name, ebs_root=False):
+        LOG.debug("Attaching volume: %(connection_info)s to %(instance_name)s",
+                  {'connection_info': connection_info,
+                   'instance_name': instance_name})
         volume_driver = self._get_volume_driver(
             connection_info=connection_info)
+
+        volume_driver.initialize_volume_connection(connection_info)
         volume_driver.attach_volume(connection_info, instance_name, ebs_root)
 
     def detach_volume(self, connection_info, instance_name):
+        LOG.debug("Detaching volume: %(connection_info)s "
+                  "from %(instance_name)s",
+                  {'connection_info': connection_info,
+                   'instance_name': instance_name})
         volume_driver = self._get_volume_driver(
             connection_info=connection_info)
         volume_driver.detach_volume(connection_info, instance_name)
@@ -136,16 +146,14 @@ class VolumeOps(object):
                                                      actual_disk_path)
 
     def get_volume_connector(self, instance):
-        if not self._initiator:
-            self._initiator = self._volutils.get_iscsi_initiator()
-            if not self._initiator:
-                LOG.warning(_LW('Could not determine iscsi initiator name'),
-                            instance=instance)
-        return {
+        connector = {
             'ip': CONF.my_block_storage_ip,
             'host': CONF.host,
-            'initiator': self._initiator,
         }
+        for volume_driver_type, volume_driver in self.volume_drivers.items():
+            connector_updates = volume_driver.get_volume_connector_props()
+            connector.update(connector_updates)
+        return connector
 
     def initialize_volumes_connection(self, block_device_info):
         mapping = driver.block_device_info_get_mapping(block_device_info)
@@ -182,10 +190,104 @@ class VolumeOps(object):
             connection_info)
 
 
-class ISCSIVolumeDriver(object):
+@six.add_metaclass(abc.ABCMeta)
+class BaseVolumeDriver(object):
     def __init__(self):
         self._vmutils = utilsfactory.get_vmutils()
+        self._physical_disk_drives = True
+
+    def initialize_volume_connection(self, connection_info):
+        pass
+
+    def disconnect_volumes(self, block_device_info):
+        pass
+
+    def get_volume_connector_props(self):
+        return {}
+
+    @abc.abstractmethod
+    def get_mounted_disk_path_from_volume(connection_info):
+        pass
+
+    def attach_volume(self, connection_info, instance_name, ebs_root=False):
+        """Attach a volume to the SCSI controller or to the IDE controller if
+        ebs_root is True
+        """
+        try:
+            serial = connection_info['serial']
+            # Getting the mounted disk
+            mounted_disk_path = self.get_mounted_disk_path_from_volume(
+                connection_info)
+
+            ctrller_path, slot = self._get_disk_ctrl_and_slot(instance_name,
+                                                              ebs_root)
+            if self._physical_disk_drives:
+                # We need to tag physical disk resources with the volume
+                # serial number, in order to be able to retrieve them
+                # during live migration.
+                self._vmutils.attach_volume_to_controller(instance_name,
+                                                          ctrller_path,
+                                                          slot,
+                                                          mounted_disk_path,
+                                                          serial=serial)
+            else:
+                self._vmutils.attach_drive(instance_name,
+                                           mounted_disk_path,
+                                           ctrller_path,
+                                           slot)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_LE('Unable to attach volume to instance %s'),
+                          instance_name)
+                self.disconnect_volumes([connection_info])
+
+    def detach_volume(self, connection_info, instance_name):
+        mounted_disk_path = self.get_mounted_disk_path_from_volume(
+                connection_info)
+
+        LOG.debug("Detaching physical disk %(disk_path)s "
+                  "from instance: %(instance_name)s",
+                  dict(disk_path=mounted_disk_path,
+                       instance_name=instance_name))
+        self._vmutils.detach_vm_disk(instance_name, mounted_disk_path,
+                                     is_physical=self._physical_disk_drives)
+
+        self.disconnect_volumes([connection_info])
+
+    def _get_disk_ctrl_and_slot(self, instance_name, ebs_root):
+        if ebs_root:
+            # Find the IDE controller for the vm.
+            ctrller_path = self._vmutils.get_vm_ide_controller(
+                instance_name, 0)
+            # Attaching to the first slot
+            slot = 0
+        else:
+            # Find the SCSI controller for the vm
+            ctrller_path = self._vmutils.get_vm_scsi_controller(
+                instance_name)
+            slot = self._vmutils.get_free_controller_slot(ctrller_path)
+        return ctrller_path, slot
+
+
+class ISCSIVolumeDriver(BaseVolumeDriver):
+    def __init__(self):
         self._volutils = utilsfactory.get_iscsi_initiator_utils()
+        self._initiator = None
+        super(ISCSIVolumeDriver, self).__init__()
+
+    @property
+    def initiator(self):
+        if not self._initiator:
+            self._initiator = self._volutils.get_iscsi_initiator()
+        return self._initiator
+
+    def get_volume_connector_props(self):
+        props = {}
+        if self.initiator:
+            props['initiator'] = self.initiator
+        else:
+            LOG.warning(_LW('Could not determine iscsi initiator name'))
+        return props
 
     def login_storage_target(self, connection_info):
         data = connection_info['data']
@@ -252,64 +354,6 @@ class ISCSIVolumeDriver(object):
         return self._get_mounted_disk_from_lun(target_iqn, target_lun,
                                                wait_for_device=True)
 
-    def attach_volume(self, connection_info, instance_name, ebs_root=False):
-        """Attach a volume to the SCSI controller or to the IDE controller if
-        ebs_root is True
-        """
-        target_iqn = None
-        LOG.debug("Attach_volume: %(connection_info)s to %(instance_name)s",
-                  {'connection_info': connection_info,
-                   'instance_name': instance_name})
-        try:
-            self.login_storage_target(connection_info)
-
-            serial = connection_info['serial']
-            # Getting the mounted disk
-            mounted_disk_path = self.get_mounted_disk_path_from_volume(
-                connection_info)
-
-            if ebs_root:
-                # Find the IDE controller for the vm.
-                ctrller_path = self._vmutils.get_vm_ide_controller(
-                    instance_name, 0)
-                # Attaching to the first slot
-                slot = 0
-            else:
-                # Find the SCSI controller for the vm
-                ctrller_path = self._vmutils.get_vm_scsi_controller(
-                    instance_name)
-                slot = self._vmutils.get_free_controller_slot(ctrller_path)
-
-            self._vmutils.attach_volume_to_controller(instance_name,
-                                                      ctrller_path,
-                                                      slot,
-                                                      mounted_disk_path,
-                                                      serial=serial)
-        except Exception:
-            with excutils.save_and_reraise_exception():
-                LOG.error(_LE('Unable to attach volume to instance %s'),
-                          instance_name)
-                target_iqn = connection_info['data']['target_iqn']
-                if target_iqn:
-                    self.logout_storage_target(target_iqn)
-
-    def detach_volume(self, connection_info, instance_name):
-        """Detach a volume to the SCSI controller."""
-        LOG.debug("Detach_volume: %(connection_info)s "
-                  "from %(instance_name)s",
-                  {'connection_info': connection_info,
-                   'instance_name': instance_name})
-
-        target_iqn = connection_info['data']['target_iqn']
-        mounted_disk_path = self.get_mounted_disk_path_from_volume(
-                connection_info)
-
-        LOG.debug("Detaching physical disk from instance: %s",
-                  mounted_disk_path)
-        self._vmutils.detach_vm_disk(instance_name, mounted_disk_path)
-
-        self.logout_storage_target(target_iqn)
-
     def _get_mounted_disk_from_lun(self, target_iqn, target_lun,
                                    wait_for_device=False):
         # The WMI query in get_device_number_for_target can incorrectly
@@ -370,56 +414,21 @@ def export_path_synchronized(f):
     return wrapper
 
 
-class SMBFSVolumeDriver(object):
+class SMBFSVolumeDriver(BaseVolumeDriver):
     def __init__(self):
         self._pathutils = utilsfactory.get_pathutils()
-        self._vmutils = utilsfactory.get_vmutils()
         self._username_regex = re.compile(r'user(?:name)?=([^, ]+)')
         self._password_regex = re.compile(r'pass(?:word)?=([^, ]+)')
+        self._physical_disk_drives = False
+        super(SMBFSVolumeDriver, self).__init__()
 
     def get_mounted_disk_path_from_volume(self, connection_info):
         return self._get_disk_path(connection_info)
 
     @export_path_synchronized
     def attach_volume(self, connection_info, instance_name, ebs_root=False):
-        self.ensure_share_mounted(connection_info)
-
-        disk_path = self._get_disk_path(connection_info)
-
-        try:
-            if ebs_root:
-                ctrller_path = self._vmutils.get_vm_ide_controller(
-                    instance_name, 0)
-                slot = 0
-            else:
-                ctrller_path = self._vmutils.get_vm_scsi_controller(
-                 instance_name)
-                slot = self._vmutils.get_free_controller_slot(ctrller_path)
-
-            self._vmutils.attach_drive(instance_name,
-                                       disk_path,
-                                       ctrller_path,
-                                       slot)
-        except os_win_exc.HyperVException as exn:
-            LOG.exception(_LE('Attach volume failed to %(instance_name)s: '
-                              '%(exn)s'), {'instance_name': instance_name,
-                                           'exn': exn})
-            raise exception.VolumeAttachFailed(
-                volume_id=connection_info['data']['volume_id'],
-                reason=exn.message)
-
-    def detach_volume(self, connection_info, instance_name):
-        LOG.debug("Detaching volume: %(connection_info)s "
-                  "from %(instance_name)s",
-                  {'connection_info': connection_info,
-                   'instance_name': instance_name})
-
-        disk_path = self._get_disk_path(connection_info)
-        export_path = self._get_export_path(connection_info)
-
-        self._vmutils.detach_vm_disk(instance_name, disk_path,
-                                     is_physical=False)
-        self._unmount_smb_share(export_path)
+        super(SMBFSVolumeDriver, self).attach_volume(
+            connection_info, instance_name, ebs_root)
 
     def disconnect_volumes(self, block_device_mapping):
         export_paths = set()
@@ -471,3 +480,80 @@ class SMBFSVolumeDriver(object):
         def unmount_synchronized():
             self._pathutils.unmount_smb_share(export_path)
         unmount_synchronized()
+
+
+class FCVolumeDriver(BaseVolumeDriver):
+    def __init__(self):
+        self._fc_utils = utilsfactory.get_fc_utils()
+        super(FCVolumeDriver, self).__init__()
+
+    def get_volume_connector_props(self):
+        props = {}
+
+        self._fc_utils.refresh_hba_configuration()
+        fc_hba_ports = self._fc_utils.get_fc_hba_ports()
+
+        if fc_hba_ports:
+            wwnns = []
+            wwpns = []
+            for port in fc_hba_ports:
+                wwnns.append(port['node_name'])
+                wwpns.append(port['port_name'])
+            props['wwpns'] = wwpns
+            props['wwnns'] = list(set(wwnns))
+        return props
+
+    @loopingcall.RetryDecorator(max_retry_count=10, max_sleep_time=0.1,
+                                exceptions=(os_win_exc.FCException,
+                                            exception.DiskNotFound))
+    def get_mounted_disk_path_from_volume(self, connection_info):
+        initiator_map = connection_info['data']['initiator_target_map']
+        target_lun = connection_info['data']['target_lun']
+        target_wwpns = connection_info['data']['target_wwn']
+        hba_mapping = self._get_fc_hba_mapping()
+        device_names = []
+
+        for node_name, hba_ports in hba_mapping.items():
+            used_ports = [port_name for port_name in hba_ports
+                          if initiator_map.get(port_name)]
+            if not used_ports:
+                continue
+
+            target_mappings = self._fc_utils.get_fc_target_mappings(node_name)
+            device_names += [mapping['device_name']
+                             for mapping in target_mappings
+                             if mapping['port_name'] in target_wwpns and
+                                mapping['lun'] == target_lun]
+
+        # Because of MPIO, we may not be able to get the device name
+        # from a specific mapping if the disk was accessed through
+        # an other HBA at that moment. In that case, the device name will
+        # show up as an empty string.
+        if not device_names:
+            LOG.debug("Could not find FC mappings for volume %(conn_info)s.",
+                      dict(conn_info=connection_info))
+            self._fc_utils.rescan_disks()
+        else:
+            device_names = [device_name for device_name in device_names
+                            if device_name]
+            if device_names:
+                device_name = device_names[0]
+                device_number = (
+                    self._vmutils.get_device_number_from_device_name(
+                        device_name))
+                mounted_disk_path = (
+                    self._vmutils.get_mounted_disk_by_drive_number(
+                        device_number))
+                return mounted_disk_path
+
+        err_msg = _("Could not find the physical disk "
+                    "path for volume %(conn_info)s.")
+        raise exception.DiskNotFound(
+            err_msg % dict(conn_info=connection_info))
+
+    def _get_fc_hba_mapping(self):
+        mapping = collections.defaultdict(list)
+        fc_hba_ports = self._fc_utils.get_fc_hba_ports()
+        for port in fc_hba_ports:
+            mapping[port['node_name']].append(port['port_name'])
+        return mapping

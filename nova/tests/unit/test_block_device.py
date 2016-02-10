@@ -120,7 +120,8 @@ class BlockDeviceTestCase(test.NoDBTestCase):
             {'virtual': 'ephemeral2', 'device': '/dev/sde'}]
 
         prepended = block_device.mappings_prepend_dev(mapping)
-        self.assertEqual(expected.sort(), prepended.sort())
+        self.assertEqual(sorted(expected, key=dict.keys),
+                         sorted(prepended, key=dict.keys))
 
     def test_strip_dev(self):
         self.assertEqual('sda', block_device.strip_dev('/dev/sda'))
@@ -499,7 +500,8 @@ class TestBlockDeviceDict(test.NoDBTestCase):
             return [bdm for bdm in bdms if bdm['source_type'] == 'image']
 
         def _get_bootable_bdms(bdms):
-            return [bdm for bdm in bdms if bdm['boot_index'] >= 0]
+            return [bdm for bdm in bdms if
+                    bdm['boot_index'] is not None and bdm['boot_index'] >= 0]
 
         new_no_img = block_device.from_legacy_mapping(self.legacy_mapping)
         self.assertEqual(0, len(_get_image_bdms(new_no_img)))

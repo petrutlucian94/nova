@@ -25,6 +25,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 from oslo_utils import strutils
+import six
 
 from nova.api.metadata import password
 from nova.compute import utils as compute_utils
@@ -352,8 +353,8 @@ class XenAPIBasedAgent(object):
         LOG.debug('Injecting file path: %r', path, instance=self.instance)
 
         # Files/paths must be base64-encoded for transmission to agent
-        b64_path = base64.b64encode(path)
-        b64_contents = base64.b64encode(contents)
+        b64_path = base64.b64encode(six.b(path))
+        b64_contents = base64.b64encode(six.b(contents))
 
         args = {'b64_path': b64_path, 'b64_contents': b64_contents}
         return self._call_agent('inject_file', args)

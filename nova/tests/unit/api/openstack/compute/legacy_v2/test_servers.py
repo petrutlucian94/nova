@@ -18,7 +18,6 @@
 import base64
 import collections
 import datetime
-import urllib
 import uuid
 
 import iso8601
@@ -902,7 +901,7 @@ class ServersControllerTest(ControllerTest):
 
         req = fakes.HTTPRequest.blank(
             '/fake/servers?status=active&status=error&system_metadata=' +
-            urllib.quote(expected_system_metadata),
+            urlparse.quote(expected_system_metadata),
             use_admin_context=True)
         servers = self.controller.index(req)['servers']
         self.assertEqual(2, len(servers))

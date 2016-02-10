@@ -57,7 +57,6 @@ from __future__ import print_function
 import argparse
 import os
 import sys
-import urllib
 
 import decorator
 import netaddr
@@ -68,6 +67,7 @@ import oslo_messaging as messaging
 from oslo_utils import importutils
 from oslo_utils import uuidutils
 import six
+from six.moves import urllib
 
 from nova.api.ec2 import ec2utils
 from nova import availability_zones
@@ -1280,7 +1280,7 @@ class CellCommands(object):
             is_parent = True
         values = {'name': name,
                   'is_parent': is_parent,
-                  'transport_url': urllib.unquote(str(transport_url)),
+                  'transport_url': urllib.parse.unquote(str(transport_url)),
                   'weight_offset': float(woffset),
                   'weight_scale': float(wscale)}
         ctxt = context.get_admin_context()

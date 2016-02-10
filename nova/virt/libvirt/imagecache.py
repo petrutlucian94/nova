@@ -31,6 +31,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
 from oslo_utils import fileutils
+import six
 
 from nova.i18n import _LE
 from nova.i18n import _LI
@@ -89,7 +90,7 @@ def get_cache_fname(images, key):
     boolean but, at some point in the future, we'll be safely able to
     assume this.
     """
-    image_id = str(images[key])
+    image_id = six.b(images[key])
     if ((not CONF.libvirt.remove_unused_kernels and
          key in ['kernel_id', 'ramdisk_id'])):
         return image_id

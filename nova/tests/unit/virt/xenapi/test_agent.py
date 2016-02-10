@@ -167,8 +167,8 @@ class FileInjectionTestCase(AgentTestCaseBase):
         agent = self._create_agent(instance)
         self.mox.StubOutWithMock(agent, "_call_agent")
 
-        b64_path = base64.b64encode('path')
-        b64_contents = base64.b64encode('contents')
+        b64_path = base64.b64encode(b'path')
+        b64_contents = base64.b64encode(b'contents')
         agent._call_agent('inject_file',
                           {'b64_contents': b64_contents,
                            'b64_path': b64_path})

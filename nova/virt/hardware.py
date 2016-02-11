@@ -743,8 +743,8 @@ def _pack_instance_onto_cores(available_siblings,
 
         usable_cores = map(lambda s: list(s)[:threads_no], sibling_set)
 
-        return zip(sorted(instance_cores),
-                   itertools.chain(*usable_cores))
+        return list(zip(sorted(instance_cores),
+                        itertools.chain(*usable_cores)))
 
     if (instance_cell.cpu_thread_policy ==
             fields.CPUThreadAllocationPolicy.REQUIRE):
@@ -798,7 +798,7 @@ def _pack_instance_onto_cores(available_siblings,
         return
 
     topology = objects.VirtCPUTopology(sockets=1,
-                                       cores=len(pinning) / threads_no,
+                                       cores=len(list(pinning)) // threads_no,
                                        threads=threads_no)
     instance_cell.pin_vcpus(*pinning)
     instance_cell.cpu_topology = topology

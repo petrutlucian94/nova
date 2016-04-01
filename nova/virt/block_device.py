@@ -492,14 +492,14 @@ def attach_block_devices(block_device_mapping, *attach_args, **attach_kwargs):
 
         bdm.attach(*attach_args, **attach_kwargs)
 
-    map(_log_and_attach, block_device_mapping)
+    list(map(_log_and_attach, block_device_mapping))
     return block_device_mapping
 
 
 def refresh_conn_infos(block_device_mapping, *refresh_args, **refresh_kwargs):
-    map(operator.methodcaller('refresh_connection_info',
-                              *refresh_args, **refresh_kwargs),
-        block_device_mapping)
+    list(map(operator.methodcaller('refresh_connection_info',
+                                   *refresh_args, **refresh_kwargs),
+        block_device_mapping))
     return block_device_mapping
 
 

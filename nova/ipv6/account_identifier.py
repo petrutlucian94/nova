@@ -20,11 +20,13 @@
 import hashlib
 
 import netaddr
+import six
 
 from nova.i18n import _
 
 
 def to_global(prefix, mac, project_id):
+    project_id = six.b(project_id)
     project_hash = netaddr.IPAddress(
                    int(hashlib.sha1(project_id).hexdigest()[:8], 16) << 32)
     static_num = netaddr.IPAddress(0xff << 24)

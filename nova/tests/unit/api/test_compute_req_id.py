@@ -15,6 +15,7 @@
 
 
 from oslo_context import context
+import six
 from testtools import matchers
 import webob
 import webob.dec
@@ -37,4 +38,4 @@ class RequestIdTest(test.NoDBTestCase):
 
         res_id = res.headers.get(compute_req_id.HTTP_RESP_HEADER_REQUEST_ID)
         self.assertThat(res_id, matchers.StartsWith('req-'))
-        self.assertEqual(res_id, res.body)
+        self.assertEqual(six.b(res_id), res.body)

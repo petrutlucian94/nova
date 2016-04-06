@@ -4462,7 +4462,7 @@ class ComputeManager(manager.Manager):
         if tail_length is not None:
             output = self._tail_log(output, tail_length)
 
-        return output.decode('utf-8', 'replace').encode('ascii', 'replace')
+        return output.decode('ascii', 'replace')
 
     def _tail_log(self, log, length):
         try:

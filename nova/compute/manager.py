@@ -5238,6 +5238,9 @@ class ComputeManager(manager.Manager):
         elif isinstance(migrate_data, migrate_data_obj.XenapiLiveMigrateData):
             is_shared_block_storage = not migrate_data.block_migration
             is_shared_instance_path = not migrate_data.block_migration
+        elif isinstance(migrate_data, migrate_data_obj.HyperVLiveMigrateData):
+            is_shared_instance_path = migrate_data.is_shared_instance_path
+            is_shared_block_storage = migrate_data.is_shared_instance_path
 
         # No instance booting at source host, but instance dir
         # must be deleted for preparing next block migration

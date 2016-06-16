@@ -14,6 +14,7 @@
 #    under the License.
 
 import os
+import tempfile
 import time
 
 from os_win.utils import pathutils
@@ -38,7 +39,7 @@ class PathUtils(pathutils.PathUtils):
     def get_instances_dir(self, remote_server=None):
         local_instance_path = os.path.normpath(CONF.instances_path)
 
-        if remote_server:
+        if remote_server and not local_instance_path.startswith(r'\\'):
             if CONF.hyperv.instances_path_share:
                 path = CONF.hyperv.instances_path_share
             else:
@@ -168,3 +169,22 @@ class PathUtils(pathutils.PathUtils):
 
     def get_age_of_file(self, file_name):
         return time.time() - os.path.getmtime(file_name)
+
+    def check_dirs_shared_storage(self, src_dir, dest_dir):
+        # Check if shared storage is being used by creating a temporary
+        # file at the destination path and checking if it exists at the
+        # source path.
+        with tempfile.NamedTemporaryFile(dir=dest_dir) as tmp_file:
+            src_path = os.path.join(src_dir,
+                                    os.path.basename(tmp_file.name))
+
+            shared_storage = os.path.exists(src_path)
+        return shared_storage
+
+    def check_remote_instances_dir_shared(self, dest):
+        # Checks if the instances dir from a remote host points
+        # to the same storage location as the local instances dir.
+        local_inst_dir = self.get_instances_dir()
+        remote_inst_dir = self.get_instances_dir(dest)
+        return self.check_dirs_shared_storage(local_inst_dir,
+                                              remote_inst_dir)

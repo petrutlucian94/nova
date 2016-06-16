@@ -262,4 +262,6 @@ class XenapiLiveMigrateData(LiveMigrateData):
 
 @obj_base.NovaObjectRegistry.register
 class HyperVLiveMigrateData(LiveMigrateData):
-    VERSION = '1.0'
+    VERSION = '1.1'
+
+    fields = {'is_shared_instance_path': fields.BooleanField()}

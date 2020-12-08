@@ -6535,6 +6535,14 @@ class ComputeManager(manager.Manager):
                 self.host, action=fields.NotificationAction.UNSHELVE,
                 phase=fields.NotificationPhase.START, bdms=bdms)
 
+        if image:
+            instance.image_ref = image['id']
+            image_meta = objects.ImageMeta.from_dict(image)
+        else:
+            image_meta = objects.ImageMeta.from_dict(
+                utils.get_image_from_system_metadata(
+                    instance.system_metadata))
+
         instance.task_state = task_states.SPAWNING
         instance.save()
 
@@ -6548,15 +6556,6 @@ class ComputeManager(manager.Manager):
 
         allocations = self.reportclient.get_allocations_for_consumer(
             context, instance.uuid)
-
-        shelved_image_ref = instance.image_ref
-        if image:
-            instance.image_ref = image['id']
-            image_meta = objects.ImageMeta.from_dict(image)
-        else:
-            image_meta = objects.ImageMeta.from_dict(
-                utils.get_image_from_system_metadata(
-                    instance.system_metadata))
 
         provider_mappings = self._get_request_group_mapping(request_spec)
 
@@ -6598,7 +6597,6 @@ class ComputeManager(manager.Manager):
                 self._nil_out_instance_obj_host_and_node(instance)
 
         if image:
-            instance.image_ref = shelved_image_ref
             self._delete_snapshot_of_shelved_instance(context, instance,
                                                       image['id'])
 
